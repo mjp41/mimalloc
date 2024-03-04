@@ -15,6 +15,7 @@ terms of the MIT license. A copy of the license can be found in the file
 
 #include <string.h>      // memset, strlen (for mi_strdup)
 #include <stdlib.h>      // malloc, abort
+#include <stdio.h>       // printf
 
 #define MI_IN_ALLOC_C
 #include "alloc-override.c"
@@ -398,6 +399,65 @@ static void mi_stat_huge_free(const mi_page_t* page) {
 // Free
 // ------------------------------------------------------
 
+// multi-threaded free posts [first->last] blocks on the thread free list.
+// Assumes first is linked to last following next pointers.
+static inline void _mi_free_block_mt_post(mi_page_t* page, mi_block_t* first, mi_block_t* last)
+{
+  // Try to put the block on either the page-local thread free list, or the heap delayed free list.
+  mi_thread_free_t tfreex;
+  bool use_delayed;
+  mi_thread_free_t tfree = mi_atomic_load_relaxed(&page->xthread_free);
+  do {
+    use_delayed = (mi_tf_delayed(tfree) == MI_USE_DELAYED_FREE);
+    if mi_unlikely(use_delayed) {
+      // unlikely: this only happens on the first concurrent free in a page that is in the full list
+      tfreex = mi_tf_set_delayed(tfree,MI_DELAYED_FREEING);
+    }
+    else {
+      // usual: directly add to page thread_free list
+      mi_block_set_next(page, last, mi_tf_block(tfree));
+      tfreex = mi_tf_set_block(tfree, first);
+    }
+  } while (!mi_atomic_cas_weak_release(&page->xthread_free, &tfree, tfreex));
+
+  if mi_unlikely(use_delayed) {
+    mi_block_t *wake_up = first;
+    bool multiple = (first != last);
+    if (multiple) {      
+      first = mi_block_next(page, first);
+    } 
+
+    // racy read on `heap`, but ok because MI_DELAYED_FREEING is set (see `mi_heap_delete` and `mi_heap_collect_abandon`)
+    mi_heap_t* const heap = (mi_heap_t*)(mi_atomic_load_acquire(&page->xheap)); //mi_page_heap(page);
+    mi_assert_internal(heap != NULL);
+    if (heap != NULL) {
+      // add to the delayed free list of this heap. (do this atomically as the lock only protects heap memory validity)
+      mi_block_t* dfree = mi_atomic_load_ptr_relaxed(mi_block_t, &heap->thread_delayed_free);
+      do {
+        mi_block_set_nextx(heap, wake_up, dfree, heap->keys);
+      } while (!mi_atomic_cas_ptr_weak_release(mi_block_t,&heap->thread_delayed_free, &dfree, wake_up));
+    }
+
+    // and reset the MI_DELAYED_FREEING flag
+    if (multiple) {
+      tfree = mi_atomic_load_relaxed(&page->xthread_free);
+      do {
+        mi_assert (mi_tf_delayed(tfree) == MI_DELAYED_FREEING);
+        mi_block_set_next(page, last, mi_tf_block(tfree));
+        tfreex = mi_tf_make(first, MI_NO_DELAYED_FREE);
+      } while (!mi_atomic_cas_weak_release(&page->xthread_free, &tfree, tfreex));
+    }
+    else {
+      tfree = mi_atomic_load_relaxed(&page->xthread_free);
+      do {
+        tfreex = tfree;
+        mi_assert (mi_tf_delayed(tfree) == MI_DELAYED_FREEING);
+        tfreex = mi_tf_set_delayed(tfree,MI_NO_DELAYED_FREE);
+      } while (!mi_atomic_cas_weak_release(&page->xthread_free, &tfree, tfreex));
+    }
+  }
+}
+
 // multi-threaded free (or free in huge block if compiled with MI_HUGE_PAGE_ABANDON)
 static mi_decl_noinline void _mi_free_block_mt(mi_page_t* page, mi_block_t* block)
 {
@@ -444,43 +504,7 @@ static mi_decl_noinline void _mi_free_block_mt(mi_page_t* page, mi_block_t* bloc
   }
   #endif
 
-  // Try to put the block on either the page-local thread free list, or the heap delayed free list.
-  mi_thread_free_t tfreex;
-  bool use_delayed;
-  mi_thread_free_t tfree = mi_atomic_load_relaxed(&page->xthread_free);
-  do {
-    use_delayed = (mi_tf_delayed(tfree) == MI_USE_DELAYED_FREE);
-    if mi_unlikely(use_delayed) {
-      // unlikely: this only happens on the first concurrent free in a page that is in the full list
-      tfreex = mi_tf_set_delayed(tfree,MI_DELAYED_FREEING);
-    }
-    else {
-      // usual: directly add to page thread_free list
-      mi_block_set_next(page, block, mi_tf_block(tfree));
-      tfreex = mi_tf_set_block(tfree,block);
-    }
-  } while (!mi_atomic_cas_weak_release(&page->xthread_free, &tfree, tfreex));
-
-  if mi_unlikely(use_delayed) {
-    // racy read on `heap`, but ok because MI_DELAYED_FREEING is set (see `mi_heap_delete` and `mi_heap_collect_abandon`)
-    mi_heap_t* const heap = (mi_heap_t*)(mi_atomic_load_acquire(&page->xheap)); //mi_page_heap(page);
-    mi_assert_internal(heap != NULL);
-    if (heap != NULL) {
-      // add to the delayed free list of this heap. (do this atomically as the lock only protects heap memory validity)
-      mi_block_t* dfree = mi_atomic_load_ptr_relaxed(mi_block_t, &heap->thread_delayed_free);
-      do {
-        mi_block_set_nextx(heap,block,dfree, heap->keys);
-      } while (!mi_atomic_cas_ptr_weak_release(mi_block_t,&heap->thread_delayed_free, &dfree, block));
-    }
-
-    // and reset the MI_DELAYED_FREEING flag
-    tfree = mi_atomic_load_relaxed(&page->xthread_free);
-    do {
-      tfreex = tfree;
-      mi_assert_internal(mi_tf_delayed(tfree) == MI_DELAYED_FREEING);
-      tfreex = mi_tf_set_delayed(tfree,MI_NO_DELAYED_FREE);
-    } while (!mi_atomic_cas_weak_release(&page->xthread_free, &tfree, tfreex));
-  }
+  _mi_free_block_mt_post(page, block, block);
 }
 
 // regular free
