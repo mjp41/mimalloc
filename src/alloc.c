@@ -504,7 +504,30 @@ static mi_decl_noinline void _mi_free_block_mt(mi_page_t* page, mi_block_t* bloc
   }
   #endif
 
-  _mi_free_block_mt_post(page, block, block);
+  // Put in thread local remote cache
+  {
+    mi_heap_t* heap = mi_heap_get_default();
+    // Lookup cache entry based on page
+    size_t hash = ((uintptr_t)page * 0xdeadbeef >> 32) % MI_REMOTE_CACHE_SIZE;     // TODO need proper hash function
+    mi_cache_entry_t* remote = &heap->remote_cache[hash];
+
+    if (remote->page == page) {
+      // Prepend the block to the remote cache
+      mi_block_set_next(page, block, remote->first);
+      remote->first = block;
+      remote->count++;
+    }
+    else {
+      // Evict current entry
+      if (remote->page != NULL)
+        _mi_free_block_mt_post(remote->page, remote->first, remote->last);
+      // Put in new entry
+      remote->page = page;
+      remote->first = block;
+      remote->last = block;
+      remote->count = 1;
+    }
+  }
 }
 
 // regular free

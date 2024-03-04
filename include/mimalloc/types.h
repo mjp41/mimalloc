@@ -494,6 +494,14 @@ typedef struct mi_padding_s {
 
 #define MI_PAGES_DIRECT   (MI_SMALL_WSIZE_MAX + MI_PADDING_WSIZE + 1)
 
+typedef struct mi_cache_entry_s {
+  mi_page_t* page;
+  mi_block_t* first;
+  mi_block_t* last;
+  size_t count;
+} mi_cache_entry_t;
+
+#define MI_REMOTE_CACHE_SIZE  (16)
 
 // A heap owns a set of pages.
 struct mi_heap_s {
@@ -511,6 +519,7 @@ struct mi_heap_s {
   size_t                page_retired_max;                    // largest retired index into the `pages` array.
   mi_heap_t*            next;                                // list of heaps per thread
   bool                  no_reclaim;                          // `true` if this heap should not reclaim abandoned pages
+  mi_cache_entry_t      remote_cache[MI_REMOTE_CACHE_SIZE];  // used to batch remote frees to reduce contention
 };
 
 

@@ -99,7 +99,13 @@ const mi_page_t _mi_page_empty = {
     SQNULL(   192), SQNULL(   224), SQNULL(   256), SQNULL(   320), SQNULL(   384), SQNULL(   448), SQNULL(   512), SQNULL(   640), /* 32 */ \
     SQNULL(   768), SQNULL(   896), SQNULL(  1024) /* 35 */ }
 
+#define MI_EMPTY_CACHE_ENTRY {NULL, NULL, NULL, 0}
+#define MI_EMPTY_CACHE_ENTRY_2 MI_EMPTY_CACHE_ENTRY, MI_EMPTY_CACHE_ENTRY
+#define MI_EMPTY_CACHE_ENTRY_4 MI_EMPTY_CACHE_ENTRY_2, MI_EMPTY_CACHE_ENTRY_2
+#define MI_EMPTY_CACHE_ENTRY_8 MI_EMPTY_CACHE_ENTRY_4, MI_EMPTY_CACHE_ENTRY_4
+#define MI_EMPTY_CACHE_ENTRY_16 MI_EMPTY_CACHE_ENTRY_8, MI_EMPTY_CACHE_ENTRY_8
 
+#define MI_EMPTY_CACHE {MI_EMPTY_CACHE_ENTRY_16}
 // --------------------------------------------------------
 // Statically allocate an empty heap as the initial
 // thread local value for the default heap,
@@ -122,7 +128,8 @@ mi_decl_cache_align const mi_heap_t _mi_heap_empty = {
   0,                // page count
   MI_BIN_FULL, 0,   // page retired min/max
   NULL,             // next
-  false
+  false,
+  MI_EMPTY_CACHE    // remote cache
 };
 
 #define tld_empty_stats  ((mi_stats_t*)((uint8_t*)&tld_empty + offsetof(mi_tld_t,stats)))
@@ -167,7 +174,8 @@ mi_heap_t _mi_heap_main = {
   0,                // page count
   MI_BIN_FULL, 0,   // page retired min/max
   NULL,             // next heap
-  false             // can reclaim
+  false,            // can reclaim
+  MI_EMPTY_CACHE    // remote cache
 };
 
 bool _mi_process_is_initialized = false;  // set to `true` in `mi_process_init`.
