@@ -458,6 +458,21 @@ static inline void _mi_free_block_mt_post(mi_page_t* page, mi_block_t* first, mi
   }
 }
 
+void _mi_remote_free_flush(void)
+{
+  mi_heap_t* heap = mi_heap_get_default();
+  for (size_t i = 0; i < MI_REMOTE_CACHE_SIZE; i++) {
+    mi_cache_entry_t* remote = &heap->remote_cache[i];
+    if (remote->page != NULL) {
+      _mi_free_block_mt_post(remote->page, remote->first, remote->last);
+      remote->page = NULL;
+      remote->first = NULL;
+      remote->last = NULL;
+      remote->count = 0;
+    }
+  }
+}
+
 // multi-threaded free (or free in huge block if compiled with MI_HUGE_PAGE_ABANDON)
 static mi_decl_noinline void _mi_free_block_mt(mi_page_t* page, mi_block_t* block)
 {

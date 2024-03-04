@@ -163,6 +163,8 @@ static void mi_heap_collect_ex(mi_heap_t* heap, mi_collect_t collect)
     _mi_segment_thread_collect(&heap->tld->segments);
   }
 
+  _mi_remote_free_flush();
+
   // collect regions on program-exit (or shared library unload)
   if (force && _mi_is_main_thread() && mi_heap_is_backing(heap)) {
     _mi_thread_data_collect();  // collect thread data cache
