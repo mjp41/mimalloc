@@ -458,9 +458,8 @@ static inline void _mi_free_block_mt_post(mi_page_t* page, mi_block_t* first, mi
   }
 }
 
-void _mi_remote_free_flush(void)
+void _mi_remote_free_flush(mi_heap_t* heap)
 {
-  mi_heap_t* heap = mi_heap_get_default();
   for (size_t i = 0; i < MI_REMOTE_CACHE_SIZE; i++) {
     mi_cache_entry_t* remote = &heap->remote_cache[i];
     if (remote->page != NULL) {
