@@ -466,6 +466,7 @@ void _mi_remote_free_flush(void)
     if (remote->page != NULL) {
       _mi_free_block_mt_post(remote->page, remote->first, remote->last);
       remote->page = NULL;
+      remote->candidate_page = NULL;
       remote->first = NULL;
       remote->last = NULL;
       remote->count = 0;
@@ -532,7 +533,8 @@ static mi_decl_noinline void _mi_free_block_mt(mi_page_t* page, mi_block_t* bloc
       remote->first = block;
       remote->count++;
     }
-    else {
+    else if (remote->candidate_page == page) {
+      // Two in a row to the new page, set this up as the new caching page.
       // Evict current entry
       if (remote->page != NULL)
         _mi_free_block_mt_post(remote->page, remote->first, remote->last);
@@ -542,6 +544,12 @@ static mi_decl_noinline void _mi_free_block_mt(mi_page_t* page, mi_block_t* bloc
       remote->last = block;
       remote->count = 1;
     }
+    else {
+      // First time we see this page, so just send assuming no other blocks will come
+      _mi_free_block_mt_post(page, block, block);
+    }
+    // Remember what we saw last.
+    remote->candidate_page = page;
   }
 }
 

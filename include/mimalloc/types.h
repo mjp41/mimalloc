@@ -496,6 +496,7 @@ typedef struct mi_padding_s {
 
 typedef struct mi_cache_entry_s {
   mi_page_t* page;
+  mi_page_t* candidate_page;
   mi_block_t* first;
   mi_block_t* last;
   size_t count;
