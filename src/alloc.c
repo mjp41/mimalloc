@@ -461,14 +461,15 @@ static inline void _mi_free_block_mt_post(mi_page_t* page, mi_block_t* first, mi
 void _mi_remote_free_flush(mi_heap_t* heap)
 {
   for (size_t i = 0; i < MI_REMOTE_CACHE_SIZE; i++) {
-    mi_cache_entry_t* remote = &heap->remote_cache[i];
-    if (remote->page != NULL) {
-      _mi_free_block_mt_post(remote->page, remote->first, remote->last);
-      remote->page = NULL;
-      remote->candidate_page = NULL;
-      remote->first = NULL;
-      remote->last = NULL;
-      remote->count = 0;
+    for (size_t j = 0; j < MI_REMOTE_CACHE_WAYS; j++) {
+      mi_cache_entry_t* remote = &(heap->remote_cache[i].entries[j]);
+      if (remote->page != NULL) {
+        _mi_free_block_mt_post(remote->page, remote->first, remote->last);
+        remote->page = NULL;
+        remote->first = NULL;
+        remote->last = NULL;
+        remote->count = 0;
+      }
     }
   }
 }
@@ -523,32 +524,42 @@ static mi_decl_noinline void _mi_free_block_mt(mi_page_t* page, mi_block_t* bloc
   {
     mi_heap_t* heap = mi_heap_get_default();
     // Lookup cache entry based on page
-    size_t hash = ((uintptr_t)page * 0xdeadbeef >> 32) % MI_REMOTE_CACHE_SIZE;     // TODO need proper hash function
-    mi_cache_entry_t* remote = &heap->remote_cache[hash];
+    size_t hash = ((uintptr_t)page * 0x7EFB352D >> 16) % MI_REMOTE_CACHE_SIZE;
+    mi_cache_entry_slot_t* slot = &heap->remote_cache[hash];
 
-    if (remote->page == page) {
-      // Prepend the block to the remote cache
-      mi_block_set_next(page, block, remote->first);
-      remote->first = block;
-      remote->count++;
+    for (size_t i = 0; i < MI_REMOTE_CACHE_WAYS; i++)
+    {
+      if (slot->entries[i].page == page)
+      {
+        // Prepend the block to the remote cache
+        mi_block_set_next(page, block, slot->entries[i].first);
+        slot->entries[i].first = block;
+        slot->entries[i].count++;
+        return;
+      }      
     }
-    else if (remote->candidate_page == page) {
-      // Two in a row to the new page, set this up as the new caching page.
-      // Evict current entry
-      if (remote->page != NULL)
-        _mi_free_block_mt_post(remote->page, remote->first, remote->last);
-      // Put in new entry
-      remote->page = page;
-      remote->first = block;
-      remote->last = block;
-      remote->count = 1;
+
+    // Find shortest list.
+    size_t min_count = slot->entries[0].count;
+    size_t index = 0;
+    for (size_t i = 1; i < MI_REMOTE_CACHE_WAYS; i++)
+    {
+      if (slot->entries[i].count < min_count)
+      {
+        min_count = slot->entries[i].count;
+        index = i;
+      }
     }
-    else {
-      // First time we see this page, so just send assuming no other blocks will come
-      _mi_free_block_mt_post(page, block, block);
-    }
-    // Remember what we saw last.
-    remote->candidate_page = page;
+
+    mi_cache_entry_t* remote = &(slot->entries[index]);
+    // Evict current entry
+    if (remote->page != NULL)
+      _mi_free_block_mt_post(remote->page, remote->first, remote->last);
+    // Put in new entry
+    remote->page = page;
+    remote->first = block;
+    remote->last = block;
+    remote->count = 1;
   }
 }
 

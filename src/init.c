@@ -99,13 +99,18 @@ const mi_page_t _mi_page_empty = {
     SQNULL(   192), SQNULL(   224), SQNULL(   256), SQNULL(   320), SQNULL(   384), SQNULL(   448), SQNULL(   512), SQNULL(   640), /* 32 */ \
     SQNULL(   768), SQNULL(   896), SQNULL(  1024) /* 35 */ }
 
-#define MI_EMPTY_CACHE_ENTRY {NULL, NULL, NULL, NULL, 0}
+#define MI_EMPTY_CACHE_WAY {NULL, NULL, NULL, 0}
+#define MI_EMPTY_CACHE_WAY_2 MI_EMPTY_CACHE_WAY, MI_EMPTY_CACHE_WAY
+
+#define MI_EMPTY_CACHE_ENTRY {{MI_EMPTY_CACHE_WAY_2}}
 #define MI_EMPTY_CACHE_ENTRY_2 MI_EMPTY_CACHE_ENTRY, MI_EMPTY_CACHE_ENTRY
 #define MI_EMPTY_CACHE_ENTRY_4 MI_EMPTY_CACHE_ENTRY_2, MI_EMPTY_CACHE_ENTRY_2
 #define MI_EMPTY_CACHE_ENTRY_8 MI_EMPTY_CACHE_ENTRY_4, MI_EMPTY_CACHE_ENTRY_4
 #define MI_EMPTY_CACHE_ENTRY_16 MI_EMPTY_CACHE_ENTRY_8, MI_EMPTY_CACHE_ENTRY_8
 
-#define MI_EMPTY_CACHE {MI_EMPTY_CACHE_ENTRY_16}
+#define MI_EMPTY_CACHE {MI_EMPTY_CACHE_ENTRY_8}
+
+
 // --------------------------------------------------------
 // Statically allocate an empty heap as the initial
 // thread local value for the default heap,
