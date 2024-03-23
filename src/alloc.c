@@ -539,16 +539,24 @@ static mi_decl_noinline void _mi_free_block_mt(mi_page_t* page, mi_block_t* bloc
       }      
     }
 
-    // Find shortest list.
-    size_t min_count = slot->entries[0].count;
+    // Find largest or absent list
     size_t index = 0;
+    {
+    size_t max_count = slot->entries[0].count;
     for (size_t i = 1; i < MI_REMOTE_CACHE_WAYS; i++)
     {
-      if (slot->entries[i].count < min_count)
+      if (slot->entries[i].count == 0)
       {
-        min_count = slot->entries[i].count;
+        index = i;
+	break;
+      }
+
+      if (slot->entries[i].count > max_count)
+      {
+        max_count = slot->entries[i].count;
         index = i;
       }
+    }
     }
 
     mi_cache_entry_t* remote = &(slot->entries[index]);
